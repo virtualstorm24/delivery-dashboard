@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Analytics Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/danfojs@1.1.2/lib/bundle.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+  <script src="./dashboard-config.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background-color: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      text-align: center;
+    }
+    h2 {
+      color: #555;
+      border-bottom: 2px solid #ddd;
+      padding-bottom: 10px;
+      margin-top: 0;
+    }
+    .chart-container {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .chart-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 20px;
+    }
+    .chart-half {
+      flex: 1;
+      min-width: 400px;
+    }
+    .chart-full {
+      width: 100%;
+    }
+    #loading {
+      text-align: center;
+      font-size: 18px;
+      color: #666;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-value {
+      font-size: 32px;
+      font-weight: bold;
+      color: #2196F3;
+    }
+    .stat-label {
+      color: #666;
+      margin-top: 5px;
+    }
+    .stat-value.profit {
+      color: #4CAF50;
+    }
+    .stat-value.loss {
+      color: #f44336;
+    }
+    .stat-value.break-even {
+      color: #FF9800;
+    }
+    .financial-section {
+      background: linear-gradient(135deg, #1a237e 0%, #283593 100%);
+      border-radius: 8px;
+      padding: 20px;
+      margin: 20px 0;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+    }
+    .financial-section h2 {
+      color: white;
+      border-bottom: 2px solid rgba(255,255,255,0.3);
+      margin-bottom: 20px;
+    }
+    .financial-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 15px;
+    }
+    .financial-card {
+      background: rgba(255,255,255,0.1);
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    .financial-card .stat-value {
+      color: white;
+    }
+    .financial-card .stat-label {
+      color: rgba(255,255,255,0.8);
+    }
+    .break-even-indicator {
+      background: white;
+      border-radius: 8px;
+      padding: 15px 20px;
+      margin-top: 15px;
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    .break-even-bar {
+      flex: 1;
+      height: 24px;
+      background: #e0e0e0;
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    .break-even-fill {
+      height: 100%;
+      border-radius: 12px;
+      transition: width 0.5s ease;
+    }
+    .break-even-marker {
+      position: absolute;
+      top: -5px;
+      width: 4px;
+      height: 34px;
+      background: #333;
+      border-radius: 2px;
+    }
+    .break-even-text {
+      font-weight: bold;
+      min-width: 120px;
+      text-align: right;
+    }
+    #charts-container {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="dashboard-title">Data Analytics Dashboard</h1>
+
+  <div id="loading">Loading data...</div>
+
+  <div id="charts-container">
+    <!-- Financial Summary Section -->
+    <div class="financial-section" id="financial-section"></div>
+
+    <!-- Revenue Charts -->
+    <div class="chart-row">
+      <div class="chart-container chart-half">
+        <h2>Revenue by Shipper</h2>
+        <div id="revenue-shipper-chart"></div>
+      </div>
+      <div class="chart-container chart-half">
+        <h2>Revenue by Status</h2>
+        <div id="revenue-status-chart"></div>
+      </div>
+    </div>
+
+    <!-- Order Stats -->
+    <div class="stats-grid" id="stats-grid"></div>
+    <div id="dynamic-charts"></div>
+  </div>
+
+  <script>
+    // Helper: Parse currency string to number (e.g., "$1,234.56" -> 1234.56)
+    function parseCurrency(value) {
+      if (value === null || value === undefined || value === "") return 0;
+      const cleaned = String(value).replace(/[$,]/g, '');
+      const num = parseFloat(cleaned);
+      return isNaN(num) ? 0 : num;
+    }
+
+    // Helper: Format number as currency
+    function formatCurrency(num) {
+      return '$' + num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Helper: Get revenue sums by category (sorted descending)
+    function getRevenueByCategory(df, categoryColumn, revenueColumn, limit = null) {
+      const sums = {};
+      const categories = df[categoryColumn].values;
+      const revenues = df[revenueColumn].values;
+
+      for (let i = 0; i < categories.length; i++) {
+        const cat = categories[i];
+        const rev = parseCurrency(revenues[i]);
+        if (cat !== null && cat !== undefined && cat !== "") {
+          const key = String(cat);
+          sums[key] = (sums[key] || 0) + rev;
+        }
+      }
+
+      let sorted = Object.entries(sums).sort((a, b) => b[1] - a[1]);
+      if (limit) sorted = sorted.slice(0, limit);
+
+      return {
+        labels: sorted.map(x => x[0]),
+        values: sorted.map(x => x[1])
+      };
+    }
+
+    // Helper: Create revenue bar chart (shows dollar amounts)
+    function createRevenueBar(elementId, data, color, height = 400) {
+      const labels = [...data.labels].reverse();
+      const values = [...data.values].reverse();
+
+      Plotly.newPlot(elementId, [{
+        type: 'bar',
+        orientation: 'h',
+        x: values,
+        y: labels,
+        marker: { color: color },
+        text: values.map(v => formatCurrency(v)),
+        textposition: 'inside',
+        textfont: { color: 'white', size: 12 },
+        hovertemplate: '%{y}: %{text}<extra></extra>'
+      }], {
+        height: height,
+        margin: { l: 220, r: 20, t: 20, b: 40 },
+        xaxis: { title: 'Revenue ($)', tickformat: '$,.0f' }
+      }, { responsive: true });
+    }
+
+    // Helper: Get value counts as sorted arrays (descending by count)
+    function getValueCounts(series, limit = null) {
+      const counts = {};
+      const values = series.values;
+
+      for (const val of values) {
+        if (val !== null && val !== undefined && val !== "") {
+          const key = String(val);
+          counts[key] = (counts[key] || 0) + 1;
+        }
+      }
+
+      let sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+
+      if (limit) {
+        sorted = sorted.slice(0, limit);
+      }
+
+      return {
+        labels: sorted.map(x => x[0]),
+        values: sorted.map(x => x[1])
+      };
+    }
+
+    // Create horizontal bar chart
+    function createHorizontalBar(elementId, data, color, height = 400) {
+      const labels = [...data.labels].reverse();
+      const values = [...data.values].reverse();
+
+      Plotly.newPlot(elementId, [{
+        type: 'bar',
+        orientation: 'h',
+        x: values,
+        y: labels,
+        marker: { color: color }
+      }], {
+        height: height,
+        margin: { l: 200, r: 20, t: 20, b: 40 },
+        xaxis: { title: 'Count' }
+      }, { responsive: true });
+    }
+
+    // Create vertical bar chart
+    function createVerticalBar(elementId, data, color, height = 400) {
+      Plotly.newPlot(elementId, [{
+        type: 'bar',
+        x: data.labels,
+        y: data.values,
+        marker: { color: color }
+      }], {
+        height: height,
+        margin: { l: 60, r: 20, t: 20, b: 120 },
+        xaxis: { tickangle: -45 },
+        yaxis: { title: 'Count' }
+      }, { responsive: true });
+    }
+
+    // Create pie/donut chart
+    function createPieChart(elementId, data, color, height = 400) {
+      Plotly.newPlot(elementId, [{
+        type: 'pie',
+        labels: data.labels,
+        values: data.values,
+        hole: 0.4,
+        textinfo: 'label+percent',
+        textposition: 'outside'
+      }], {
+        height: height,
+        margin: { l: 20, r: 20, t: 20, b: 20 },
+        showlegend: true
+      }, { responsive: true });
+    }
+
+    // Create histogram
+    function createHistogram(elementId, values, color, height = 400) {
+      Plotly.newPlot(elementId, [{
+        type: 'histogram',
+        x: values,
+        marker: { color: color },
+        nbinsx: 20
+      }], {
+        height: height,
+        margin: { l: 60, r: 20, t: 20, b: 60 },
+        xaxis: { title: 'Value' },
+        yaxis: { title: 'Frequency' }
+      }, { responsive: true });
+    }
+
+    // Generate chart HTML structure
+    function generateChartHTML(charts) {
+      let html = '';
+      let i = 0;
+
+      while (i < charts.length) {
+        const chart = charts[i];
+        const nextChart = charts[i + 1];
+        const isFullWidth = chart.height && chart.height > 400;
+        const isHistogram = chart.type === 'histogram';
+
+        if (isFullWidth) {
+          html += `
+            <div class="chart-container chart-full">
+              <h2>${chart.title}</h2>
+              <div id="${chart.id}"></div>
+            </div>`;
+          i++;
+        } else if (nextChart && !nextChart.height) {
+          html += `
+            <div class="chart-row">
+              <div class="chart-container chart-half">
+                <h2>${chart.title}</h2>
+                <div id="${chart.id}"></div>
+              </div>
+              <div class="chart-container chart-half">
+                <h2>${nextChart.title}</h2>
+                <div id="${nextChart.id}"></div>
+              </div>
+            </div>`;
+          i += 2;
+        } else {
+          html += `
+            <div class="chart-container">
+              <h2>${chart.title}</h2>
+              <div id="${chart.id}"></div>
+            </div>`;
+          i++;
+        }
+      }
+
+      return html;
+    }
+
+    async function loadAndVisualize() {
+      try {
+        // Set title
+        document.getElementById("dashboard-title").textContent = CONFIG.title;
+        document.title = CONFIG.title;
+
+        // Load CSV
+        const df = await dfd.readCSV(CONFIG.csvFile);
+
+        document.getElementById("loading").style.display = "none";
+        document.getElementById("charts-container").style.display = "block";
+
+        // ========== FINANCIAL CALCULATIONS ==========
+        const fin = CONFIG.financial;
+        const revenueValues = df[fin.revenueColumn].values;
+        const totalRevenue = revenueValues.reduce((sum, val) => sum + parseCurrency(val), 0);
+        const breakEven = fin.breakEven;
+        const profitLoss = totalRevenue - breakEven;
+        const isProfit = profitLoss >= 0;
+        const percentOfBreakEven = (totalRevenue / breakEven) * 100;
+        const avgRevenue = totalRevenue / df.shape[0];
+
+        // Calculate revenue for delivered orders only
+        const statusColumn = CONFIG.summaryStats.statusColumn;
+        const deliveredValue = CONFIG.summaryStats.deliveredValue;
+        let deliveredRevenue = 0;
+        for (let i = 0; i < df.shape[0]; i++) {
+          if (df[statusColumn].values[i] === deliveredValue) {
+            deliveredRevenue += parseCurrency(revenueValues[i]);
+          }
+        }
+
+        // Financial Section HTML
+        const profitClass = isProfit ? 'profit' : 'loss';
+        const barPercent = Math.min(percentOfBreakEven, 150); // Cap at 150% for display
+        const barColor = isProfit ? '#4CAF50' : '#f44336';
+        const markerPosition = (100 / 150) * 100; // Break-even marker at 100% point
+
+        // Profit only counts AFTER break-even
+        const actualProfit = isProfit ? profitLoss : 0;
+        const stillNeeded = isProfit ? 0 : Math.abs(profitLoss);
+
+        document.getElementById("financial-section").innerHTML = `
+          <h2>💰 Financial Summary (Daily)</h2>
+          <div class="financial-grid">
+            <div class="financial-card">
+              <div class="stat-value">${formatCurrency(totalRevenue)}</div>
+              <div class="stat-label">Total Revenue</div>
+            </div>
+            <div class="financial-card">
+              <div class="stat-value">${formatCurrency(breakEven)}</div>
+              <div class="stat-label">Daily Costs (Break-Even)</div>
+            </div>
+            <div class="financial-card">
+              <div class="stat-value ${isProfit ? 'profit' : 'break-even'}">${formatCurrency(actualProfit)}</div>
+              <div class="stat-label">Profit ${isProfit ? '✓' : '(after break-even)'}</div>
+            </div>
+            <div class="financial-card">
+              <div class="stat-value ${isProfit ? 'profit' : 'loss'}">${isProfit ? 'COVERED ✓' : formatCurrency(stillNeeded)}</div>
+              <div class="stat-label">${isProfit ? 'Break-Even Reached!' : 'Still Needed to Break Even'}</div>
+            </div>
+            <div class="financial-card">
+              <div class="stat-value">${formatCurrency(deliveredRevenue)}</div>
+              <div class="stat-label">Delivered Revenue</div>
+            </div>
+            <div class="financial-card">
+              <div class="stat-value ${profitClass}">${percentOfBreakEven.toFixed(1)}%</div>
+              <div class="stat-label">of Break-Even</div>
+            </div>
+          </div>
+          <div class="break-even-indicator">
+            <span style="color: #666; min-width: 30px;">$0</span>
+            <div class="break-even-bar">
+              <div class="break-even-fill" style="width: ${barPercent / 1.5}%; background: ${barColor};"></div>
+              <div class="break-even-marker" style="left: ${markerPosition}%;" title="Break-Even: ${formatCurrency(breakEven)}"></div>
+            </div>
+            <span class="break-even-text" style="color: ${barColor};">${formatCurrency(totalRevenue)}</span>
+          </div>
+          <div style="text-align: center; margin-top: 10px; color: rgba(255,255,255,0.7); font-size: 14px;">
+            Break-even point: ${formatCurrency(breakEven)} | ${isProfit ? '🎉 You\'re profitable!' : '📊 ' + (100 - percentOfBreakEven).toFixed(1) + '% to go'}
+          </div>
+        `;
+
+        // Revenue by Shipper Chart
+        const revenueByShipper = getRevenueByCategory(df, "Shipper", fin.revenueColumn, 10);
+        createRevenueBar("revenue-shipper-chart", revenueByShipper, '#FF9800');
+
+        // Revenue by Status Chart
+        const revenueByStatus = getRevenueByCategory(df, statusColumn, fin.revenueColumn);
+        createRevenueBar("revenue-status-chart", revenueByStatus, '#2196F3');
+
+        // ========== ORDER STATS ==========
+        // Generate Summary Stats
+        const stats = CONFIG.summaryStats;
+        const totalOrders = df.shape[0];
+        const deliveredCount = df[stats.statusColumn].values.filter(s => s === stats.deliveredValue).length;
+        const rejectedCount = df[stats.statusColumn].values.filter(s => s === stats.rejectedValue).length;
+        const avgDistance = df[stats.distanceColumn].dropNa().mean().toFixed(1);
+        const avgAge = df[stats.ageColumn].dropNa().mean().toFixed(1);
+
+        document.getElementById("stats-grid").innerHTML = `
+          <div class="stat-card">
+            <div class="stat-value">${totalOrders}</div>
+            <div class="stat-label">Total Orders</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${deliveredCount}</div>
+            <div class="stat-label">${stats.deliveredValue}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${((deliveredCount/totalOrders)*100).toFixed(1)}%</div>
+            <div class="stat-label">${stats.deliveredValue} Rate</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${rejectedCount}</div>
+            <div class="stat-label">${stats.rejectedValue}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${avgDistance}</div>
+            <div class="stat-label">Avg ${stats.distanceColumn}</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-value">${avgAge}</div>
+            <div class="stat-label">Avg ${stats.ageColumn}</div>
+          </div>
+        `;
+
+        // Generate chart containers
+        document.getElementById("dynamic-charts").innerHTML = generateChartHTML(CONFIG.charts);
+
+        // Render each chart
+        for (const chart of CONFIG.charts) {
+          const height = chart.height || 400;
+
+          if (chart.type === 'histogram') {
+            const values = df[chart.column].dropNa().values.filter(v => v !== null);
+            createHistogram(chart.id, values, chart.color, height);
+          } else {
+            let data = getValueCounts(df[chart.column], chart.limit);
+
+            // Sort by label if specified (for numeric labels like scores)
+            if (chart.sortByLabel) {
+              const pairs = data.labels.map((l, i) => [l, data.values[i]]);
+              pairs.sort((a, b) => Number(a[0]) - Number(b[0]));
+              data = {
+                labels: pairs.map(x => x[0]),
+                values: pairs.map(x => x[1])
+              };
+            }
+
+            switch (chart.type) {
+              case 'pie':
+                createPieChart(chart.id, data, chart.color, height);
+                break;
+              case 'horizontal-bar':
+                createHorizontalBar(chart.id, data, chart.color, height);
+                break;
+              case 'vertical-bar':
+                createVerticalBar(chart.id, data, chart.color, height);
+                break;
+            }
+          }
+        }
+
+      } catch (error) {
+        document.getElementById("loading").innerHTML =
+          `<span style="color: red;">Error: ${error.message}</span><br>
+           <small>Check console for details. Make sure column names match your CSV.</small>`;
+        console.error(error);
+      }
+    }
+
+    loadAndVisualize();
+  </script>
+</body>
+</html>
