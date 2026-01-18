@@ -294,7 +294,7 @@
     }
 
     // Create pie/donut chart
-    function createPieChart(elementId, data, color, height = 500) {
+    function createPieChart(elementId, data, color, height = 600) {
       Plotly.newPlot(elementId, [{
         type: 'pie',
         labels: data.labels,
@@ -302,11 +302,11 @@
         hole: 0.4,
         textinfo: 'label+percent',
         textposition: 'outside',
-        textfont: { size: 11 },
+        textfont: { size: 10 },
         hovertemplate: '%{label}: %{value} (%{percent})<extra></extra>'
       }], {
         height: height,
-        margin: { l: 20, r: 250, t: 30, b: 30 },
+        margin: { l: 100, r: 400, t: 50, b: 50 },
         showlegend: true,
         legend: {
           orientation: 'v',
