@@ -299,11 +299,22 @@
         values: data.values,
         hole: 0.4,
         textinfo: 'label+percent',
-        textposition: 'outside'
+        textposition: 'auto',
+        insidetextorientation: 'radial',
+        hovertemplate: '%{label}: %{value} (%{percent})<extra></extra>'
       }], {
         height: height,
-        margin: { l: 20, r: 20, t: 20, b: 20 },
-        showlegend: true
+        margin: { l: 20, r: 200, t: 20, b: 20 },
+        showlegend: true,
+        legend: {
+          orientation: 'v',
+          x: 1.05,
+          y: 0.5,
+          xanchor: 'left',
+          bgcolor: 'rgba(255, 255, 255, 0.8)',
+          bordercolor: '#ddd',
+          borderwidth: 1
+        }
       }, { responsive: true });
     }
 
