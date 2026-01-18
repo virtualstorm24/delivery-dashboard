@@ -293,25 +293,17 @@
 
     // Create pie/donut chart
     function createPieChart(elementId, data, color, height = 400) {
-      // Calculate total for percentage threshold
-      const total = data.values.reduce((a, b) => a + b, 0);
-
-      // Only show labels on slices > 5%, others just show in legend
-      const textPositions = data.values.map(v => (v / total) > 0.05 ? 'outside' : 'none');
-
       Plotly.newPlot(elementId, [{
         type: 'pie',
         labels: data.labels,
         values: data.values,
         hole: 0.4,
         textinfo: 'label+percent',
-        textposition: textPositions,
-        hoverinfo: 'label+percent+value'
+        textposition: 'outside'
       }], {
         height: height,
-        margin: { l: 20, r: 150, t: 20, b: 20 },
-        showlegend: true,
-        legend: { x: 1.05, y: 0.5 }
+        margin: { l: 100, r: 100, t: 80, b: 80 },
+        showlegend: true
       }, { responsive: true });
     }
 
